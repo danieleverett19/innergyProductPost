@@ -5,6 +5,62 @@ from pathlib import Path
 
 st.set_page_config(page_title="Innergy Product Posting Tool", layout="wide")
 
+# ── Innergy color scheme ───────────────────────────────────────────────────────
+st.markdown("""
+    <style>
+        /* Main background */
+        .stApp {
+            background-color: #ffffff;
+        }
+        /* Top header bar accent */
+        header[data-testid="stHeader"] {
+            background-color: #ffffff;
+            border-bottom: 3px solid #E8500A;
+        }
+        /* Primary button — Innergy orange */
+        .stButton > button[kind="primary"] {
+            background-color: #E8500A;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .stButton > button[kind="primary"]:hover {
+            background-color: #c94208;
+            color: white;
+        }
+        /* Secondary/disconnect button */
+        .stButton > button[kind="secondary"] {
+            border: 1px solid #E8500A;
+            color: #E8500A;
+            border-radius: 4px;
+            font-weight: 600;
+            background-color: white;
+        }
+        .stButton > button[kind="secondary"]:hover {
+            background-color: #fff3ee;
+        }
+        /* Subheaders */
+        h2, h3 {
+            color: #1a2433;
+            font-weight: 700;
+        }
+        /* Dataframe header */
+        .stDataFrame thead tr th {
+            background-color: #1a2433 !important;
+            color: white !important;
+        }
+        /* Caption text */
+        .stCaption {
+            color: #6b7280;
+        }
+        /* Divider color */
+        hr {
+            border-color: #e5e7eb;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 BASE_URL = "https://app.innergy.com"
 
 EMPLOYEE_COLUMNS = [
@@ -56,15 +112,15 @@ def fetch_employees(api_key: str):
 # ── Logo ───────────────────────────────────────────────────────────────────────
 logo_path = Path("Images/InnergyLogo.jpeg")
 if logo_path.exists():
-    st.image(str(logo_path), width=250)
+    st.image(str(logo_path), width=160)
 else:
-    st.title("🪵 Innergy Product Posting Tool")
+    st.markdown("### Innergy Product Posting Tool")
 
 st.markdown("---")
 
 # ── Not logged in ──────────────────────────────────────────────────────────────
 if not st.session_state.authenticated:
-    st.subheader("🔑 Connect to Innergy")
+    st.subheader("Connect to Innergy")
     st.markdown("Paste your Innergy API key below to get started.")
 
     api_key_input = st.text_input(
@@ -72,6 +128,7 @@ if not st.session_state.authenticated:
         type="password",
         placeholder="Paste your Innergy API key here...",
         help="Your API key is stored only for this session and never saved.",
+        label_visibility="collapsed"
     )
 
     if st.button("Connect", type="primary"):
@@ -95,9 +152,9 @@ if not st.session_state.authenticated:
 else:
     col1, col2 = st.columns([6, 1])
     with col1:
-        st.subheader("👷 Employees")
+        st.subheader("Employees")
     with col2:
-        if st.button("🔓 Disconnect"):
+        if st.button("Disconnect", type="secondary"):
             st.session_state.api_key = ""
             st.session_state.authenticated = False
             st.session_state.employees_df = None
@@ -111,7 +168,7 @@ else:
 
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="⬇️ Download as CSV",
+            label="Download as CSV",
             data=csv,
             file_name="innergy_employees.csv",
             mime="text/csv",
