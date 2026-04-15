@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
-from streamlit_local_storage import LocalStorage
+from pathlib import Path
 
 st.set_page_config(page_title="Innergy Product Posting Tool", layout="wide")
 
@@ -13,18 +13,13 @@ EMPLOYEE_COLUMNS = [
     "TimeZone", "ExternalIdentifier", "Id", "CreatedDate", "LastLoginDate"
 ]
 
-# ── Local storage (persists across refreshes) ──────────────────────────────────
-local_storage = LocalStorage()
-
 # ── Session state defaults ─────────────────────────────────────────────────────
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "employees_df" not in st.session_state:
     st.session_state.employees_df = None
-if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
-if "storage_checked" not in st.session_state:
-    st.session_state.storage_checked = False
 
 
 def fetch_employees(api_key: str):
@@ -49,7 +44,7 @@ def fetch_employees(api_key: str):
             cols = [c for c in EMPLOYEE_COLUMNS if c in df.columns]
             return df[cols], None
         elif r.status_code in (401, 403):
-            return None, f"invalid_key"
+            return None, f"❌ API key rejected (HTTP {r.status_code}). Please check your key."
         else:
             return None, f"❌ Unexpected response: HTTP {r.status_code}"
     except requests.exceptions.ConnectionError:
@@ -58,34 +53,13 @@ def fetch_employees(api_key: str):
         return None, f"❌ Error: {str(e)}"
 
 
-def disconnect():
-    local_storage.deleteItem("innergy_api_key")
-    st.session_state.authenticated = False
-    st.session_state.employees_df = None
-    st.session_state.api_key = ""
-    st.session_state.storage_checked = False
+# ── Logo ───────────────────────────────────────────────────────────────────────
+logo_path = Path("Images/InnergyLogo.jpeg")
+if logo_path.exists():
+    st.image(str(logo_path), width=250)
+else:
+    st.title("🪵 Innergy Product Posting Tool")
 
-
-# ── On load: silently check local storage for a saved API key ─────────────────
-if not st.session_state.storage_checked and not st.session_state.authenticated:
-    saved_key = local_storage.getItem("innergy_api_key")
-    st.session_state.storage_checked = True
-    if saved_key:
-        df, error = fetch_employees(saved_key)
-        if df is not None:
-            st.session_state.api_key = saved_key
-            st.session_state.authenticated = True
-            st.session_state.employees_df = df
-        elif error == "invalid_key":
-            # Key is stale/expired — clear it silently
-            local_storage.deleteItem("innergy_api_key")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# UI
-# ══════════════════════════════════════════════════════════════════════════════
-
-st.title("Innergy Product Posting Tool")
 st.markdown("---")
 
 # ── Not logged in ──────────────────────────────────────────────────────────────
@@ -97,7 +71,7 @@ if not st.session_state.authenticated:
         "API Key",
         type="password",
         placeholder="Paste your Innergy API key here...",
-        help="Your API key is saved in your browser only. It is never stored on a server.",
+        help="Your API key is stored only for this session and never saved.",
     )
 
     if st.button("Connect", type="primary"):
@@ -107,13 +81,9 @@ if not st.session_state.authenticated:
             with st.spinner("Connecting to Innergy..."):
                 df, error = fetch_employees(api_key_input.strip())
 
-            if error and error != "invalid_key":
+            if error:
                 st.error(error)
-            elif error == "invalid_key":
-                st.error("❌ API key rejected (HTTP 403). Please check your key.")
             elif df is not None:
-                # Save key to browser local storage
-                local_storage.setItem("innergy_api_key", api_key_input.strip())
                 st.session_state.api_key = api_key_input.strip()
                 st.session_state.authenticated = True
                 st.session_state.employees_df = df
@@ -128,7 +98,9 @@ else:
         st.subheader("👷 Employees")
     with col2:
         if st.button("🔓 Disconnect"):
-            disconnect()
+            st.session_state.api_key = ""
+            st.session_state.authenticated = False
+            st.session_state.employees_df = None
             st.rerun()
 
     df = st.session_state.employees_df
