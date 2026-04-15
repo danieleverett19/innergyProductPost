@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import base64
 from pathlib import Path
 
 st.set_page_config(page_title="Innergy Product Posting Tool", layout="wide")
@@ -8,16 +9,13 @@ st.set_page_config(page_title="Innergy Product Posting Tool", layout="wide")
 # ── Innergy color scheme ───────────────────────────────────────────────────────
 st.markdown("""
     <style>
-        /* Main background */
         .stApp {
             background-color: #ffffff;
         }
-        /* Top header bar accent */
         header[data-testid="stHeader"] {
             background-color: #ffffff;
             border-bottom: 3px solid #E8500A;
         }
-        /* Primary button — Innergy orange */
         .stButton > button[kind="primary"] {
             background-color: #E8500A;
             color: white;
@@ -29,7 +27,6 @@ st.markdown("""
             background-color: #c94208;
             color: white;
         }
-        /* Secondary/disconnect button */
         .stButton > button[kind="secondary"] {
             border: 1px solid #E8500A;
             color: #E8500A;
@@ -40,23 +37,28 @@ st.markdown("""
         .stButton > button[kind="secondary"]:hover {
             background-color: #fff3ee;
         }
-        /* Subheaders */
         h2, h3 {
             color: #1a2433;
             font-weight: 700;
         }
-        /* Dataframe header */
-        .stDataFrame thead tr th {
-            background-color: #1a2433 !important;
-            color: white !important;
-        }
-        /* Caption text */
-        .stCaption {
-            color: #6b7280;
-        }
-        /* Divider color */
         hr {
             border-color: #e5e7eb;
+        }
+        .innergy-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 0.5rem;
+        }
+        .innergy-title img {
+            height: 36px;
+            width: auto;
+        }
+        .innergy-title span {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1a2433;
+            line-height: 36px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -76,6 +78,15 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "employees_df" not in st.session_state:
     st.session_state.employees_df = None
+
+
+def get_logo_base64():
+    logo_path = Path("Images/InnergyLogo.jpeg")
+    if logo_path.exists():
+        with open(logo_path, "rb") as f:
+            data = base64.b64encode(f.read()).decode()
+        return f"data:image/jpeg;base64,{data}"
+    return None
 
 
 def fetch_employees(api_key: str):
@@ -109,10 +120,15 @@ def fetch_employees(api_key: str):
         return None, f"❌ Error: {str(e)}"
 
 
-# ── Logo ───────────────────────────────────────────────────────────────────────
-logo_path = Path("Images/InnergyLogo.jpeg")
-if logo_path.exists():
-    st.image(str(logo_path), width=160)
+# ── Inline logo + title ────────────────────────────────────────────────────────
+logo_src = get_logo_base64()
+if logo_src:
+    st.markdown(f"""
+        <div class="innergy-title">
+            <img src="{logo_src}" />
+            <span>Product Posting Tool</span>
+        </div>
+    """, unsafe_allow_html=True)
 else:
     st.markdown("### Innergy Product Posting Tool")
 
