@@ -60,6 +60,18 @@ st.markdown("""
             color: #1a2433;
             line-height: 36px;
         }
+        .welcome-banner {
+            background-color: #fff8f5;
+            border-left: 4px solid #E8500A;
+            padding: 12px 18px;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        .welcome-banner span {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1a2433;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -78,6 +90,8 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "employees_df" not in st.session_state:
     st.session_state.employees_df = None
+if "company_name" not in st.session_state:
+    st.session_state.company_name = ""
 
 
 def get_logo_base64():
@@ -87,6 +101,25 @@ def get_logo_base64():
             data = base64.b64encode(f.read()).decode()
         return f"data:image/jpeg;base64,{data}"
     return None
+
+
+def fetch_company_name(api_key: str):
+    url = BASE_URL + "/api/ourCompanyInfo/settings"
+    headers = {
+        "Accept": "application/json",
+        "Api-Key": api_key
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            # Try common field names for company name
+            for field in ("CompanyName", "Name", "companyName", "name", "Company", "company"):
+                if field in data and data[field]:
+                    return data[field]
+        return None
+    except Exception:
+        return None
 
 
 def fetch_employees(api_key: str):
@@ -157,15 +190,26 @@ if not st.session_state.authenticated:
             if error:
                 st.error(error)
             elif df is not None:
+                company_name = fetch_company_name(api_key_input.strip())
                 st.session_state.api_key = api_key_input.strip()
                 st.session_state.authenticated = True
                 st.session_state.employees_df = df
+                st.session_state.company_name = company_name or ""
                 st.rerun()
             else:
                 st.error("No employee data returned.")
 
 # ── Logged in ──────────────────────────────────────────────────────────────────
 else:
+    # Welcome banner
+    company = st.session_state.company_name
+    welcome_text = f"Welcome, {company}" if company else "Welcome"
+    st.markdown(f"""
+        <div class="welcome-banner">
+            <span>{welcome_text}</span>
+        </div>
+    """, unsafe_allow_html=True)
+
     col1, col2 = st.columns([6, 1])
     with col1:
         st.subheader("Employees")
@@ -174,6 +218,7 @@ else:
             st.session_state.api_key = ""
             st.session_state.authenticated = False
             st.session_state.employees_df = None
+            st.session_state.company_name = ""
             st.rerun()
 
     df = st.session_state.employees_df
