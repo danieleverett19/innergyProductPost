@@ -107,3 +107,103 @@ def create_opportunity(api_key: str, payload: dict):
             return False, f"HTTP {r.status_code}: {r.text}"
     except Exception as e:
         return False, str(e)
+
+
+# --- HELPER: FETCH PRODUCTS ---
+def fetch_products(api_key: str):
+    url = BASE_URL + "/api/products"
+    headers = {"Accept": "application/json", "Api-Key": api_key}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            # The products endpoint wraps results in an "Items" array (confirmed via Power Query)
+            items = []
+            if isinstance(data, dict):
+                items = data.get("Items") or data.get("items") or data.get("data") or []
+            elif isinstance(data, list):
+                items = data
+            return items, None
+        elif r.status_code in (401, 403):
+            return None, f"❌ API key rejected (HTTP {r.status_code})."
+        else:
+            return None, f"❌ Unexpected response: HTTP {r.status_code} — {r.text[:200]}"
+    except requests.exceptions.ConnectionError:
+        return None, "❌ Could not reach Innergy."
+    except Exception as e:
+        return None, f"❌ Error: {str(e)}"
+
+
+# --- HELPER: FETCH VARIABLE SETS (master catalog of global variable groups) ---
+def fetch_variable_sets(api_key: str):
+    # NOTE: this endpoint lives on the V2-unstable API, not the original V1.
+    # V2 uses pagination — we pass take=500 to grab everything in one call.
+    url = BASE_URL + "/api/v2-unstable/libraries/variable-sets?skip=0&take=500"
+    headers = {"Accept": "application/json", "Api-Key": api_key}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            # V2 responses use "data" (not "Items") for the array
+            items = []
+            if isinstance(data, dict):
+                items = data.get("data") or data.get("Data") or []
+            elif isinstance(data, list):
+                items = data
+            return items, None
+        elif r.status_code in (401, 403):
+            return None, f"❌ API key rejected (HTTP {r.status_code})."
+        else:
+            return None, f"❌ Unexpected response: HTTP {r.status_code} — {r.text[:200]}"
+    except requests.exceptions.ConnectionError:
+        return None, "❌ Could not reach Innergy."
+    except Exception as e:
+        return None, f"❌ Error: {str(e)}"
+
+
+# --- HELPER: FETCH VARIABLE SET VALUES (the actual dropdown options) ---
+def fetch_variable_set_values(api_key: str):
+    url = BASE_URL + "/api/v2-unstable/libraries/variables/variable-set-values?skip=0&take=500"
+    headers = {"Accept": "application/json", "Api-Key": api_key}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            items = []
+            if isinstance(data, dict):
+                items = data.get("data") or data.get("Data") or []
+            elif isinstance(data, list):
+                items = data
+            return items, None
+        elif r.status_code in (401, 403):
+            return None, f"❌ API key rejected (HTTP {r.status_code})."
+        else:
+            return None, f"❌ Unexpected response: HTTP {r.status_code} — {r.text[:200]}"
+    except requests.exceptions.ConnectionError:
+        return None, "❌ Could not reach Innergy."
+    except Exception as e:
+        return None, f"❌ Error: {str(e)}"
+
+
+# --- HELPER: FETCH VARIABLES (likely local variables) ---
+def fetch_variables(api_key: str):
+    url = BASE_URL + "/api/v2-unstable/libraries/variables?skip=0&take=500"
+    headers = {"Accept": "application/json", "Api-Key": api_key}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            items = []
+            if isinstance(data, dict):
+                items = data.get("data") or data.get("Data") or []
+            elif isinstance(data, list):
+                items = data
+            return items, None
+        elif r.status_code in (401, 403):
+            return None, f"❌ API key rejected (HTTP {r.status_code})."
+        else:
+            return None, f"❌ Unexpected response: HTTP {r.status_code} — {r.text[:200]}"
+    except requests.exceptions.ConnectionError:
+        return None, "❌ Could not reach Innergy."
+    except Exception as e:
+        return None, f"❌ Error: {str(e)}"

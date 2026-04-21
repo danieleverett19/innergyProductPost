@@ -30,6 +30,16 @@ for key, default in {
     "opp_error": None,
     "debug_payload": None,
     "disconnect": False,
+# --- Products feature state ---
+    "opp_id": None,              # Id of the created opportunity (populated after successful create)
+    "opp_name_created": "",      # Name of the created opportunity (for display)
+    "cart": {},                  # {line_id: {product_id, library_name, name, qty, category, globals, locals}}
+    "cart_line_counter": 0,      # Monotonic counter used to build unique line_ids (duplicates allowed)
+    "products_cache": None,      # List of product dicts from /api/products (fetched once per session)
+    "dev_skip_opp": None,        # Dev-mode toggle to skip requiring an opportunity (None = use default)
+    # --- Variable catalogs (fetched once per session, used across all cart items) ---
+    "variable_sets_cache": None,  # Globals catalog from /api/v2-unstable/libraries/variable-sets
+    "variables_cache": None,      # Locals catalog from /api/v2-unstable/libraries/variables
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
