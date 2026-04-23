@@ -10,6 +10,7 @@ from api_helpers import (
     fetch_products,
     fetch_variable_sets,
     fetch_variables,
+    fetch_variable_set_values,
     BID_TYPE_MAP,
 )
 from login_page import get_logo_base64, get_dev_api_key
@@ -228,7 +229,6 @@ def _render_products_section():
     st.markdown("---")
     st.markdown("### Products")
 
-    # --- FETCH PRODUCTS ONCE PER SESSION ---
     if st.session_state.products_cache is None:
         with st.spinner("Loading products..."):
             items, error = fetch_products(st.session_state.api_key)
@@ -238,7 +238,6 @@ def _render_products_section():
         active_items = [p for p in (items or []) if p.get("Status") == "Active"]
         st.session_state.products_cache = active_items
 
-    # --- FETCH VARIABLE CATALOGS ONCE PER SESSION (used by all cart line editors) ---
     _ensure_variable_catalogs_loaded()
 
     products = st.session_state.products_cache or []
@@ -247,10 +246,7 @@ def _render_products_section():
         st.warning("No active products found.")
         return
 
-    # --- CART (ON TOP) ---
     _render_cart()
-
-    # --- LIBRARY (BELOW) ---
     _render_library(products)
 
 
@@ -277,8 +273,6 @@ def _ensure_variable_catalogs_loaded():
 
 # --- HELPER: LOOK UP A GLOBAL VARIABLE SET BY ITS DISPLAY NAME ---
 def _find_global_by_display_name(display_name: str):
-    # The /api/products response lists globals by their display name (e.g. "301 Laminate").
-    # We look that name up in the /variable-sets catalog to get the PrimaryInstance (default) etc.
     if not display_name:
         return None
     for vs in st.session_state.variable_sets_cache or []:
@@ -303,7 +297,6 @@ def _find_local_by_display_name(display_name: str):
 
 # --- HELPER: PARSE PREDEFINED VALUES STRING INTO A LIST ---
 def _parse_predefined_values(predefined: str):
-    # API returns something like "finished, raw" or "0, 2, 4, 6"
     if not predefined:
         return []
     return [v.strip() for v in predefined.split(",") if v.strip()]
@@ -320,7 +313,6 @@ def _render_cart():
 
     st.caption(f"{len(cart)} line{'s' if len(cart) != 1 else ''} in cart.")
 
-    # Reduce vertical padding between streamlit expanders in the cart
     st.markdown("""
         <style>
             div[data-testid="stExpander"] { margin-bottom: 0.25rem; }
@@ -329,18 +321,16 @@ def _render_cart():
         </style>
     """, unsafe_allow_html=True)
 
-    # Render each cart line as its own expander
     for line_id, entry in list(cart.items()):
         _render_cart_line(line_id, entry)
 
     st.markdown("---")
 
 
-# --- SINGLE CART LINE (expander: header = summary row, body = variable editors) ---
+# --- SINGLE CART LINE ---
 def _render_cart_line(line_id, entry):
     summary_label = f"{entry.get('name') or entry.get('library_name')}  —  Qty {entry.get('qty', 1)}"
     with st.expander(summary_label, expanded=False):
-        # --- TOP ROW: editable name | library name (read-only) | qty | remove ---
         h1, h2, h3, h4 = st.columns([4, 4, 2, 1])
         with h1:
             st.markdown("**Name**")
@@ -373,13 +363,11 @@ def _render_cart_line(line_id, entry):
                 del st.session_state.cart[line_id]
                 st.rerun()
 
-        # --- VARIABLE EDITORS (GLOBAL + LOCAL) ---
         _render_line_variables(line_id, entry)
 
 
 # --- VARIABLE EDITORS FOR A SINGLE CART LINE ---
 def _render_line_variables(line_id, entry):
-    # Find the full product record so we know its Globals/Locals lists
     product_id = entry.get("product_id")
     product = None
     for p in st.session_state.products_cache or []:
@@ -394,7 +382,6 @@ def _render_line_variables(line_id, entry):
     globals_list = product.get("Globals") or []
     locals_list = product.get("Locals") or []
 
-    # --- GLOBAL VARIABLES SECTION ---
     st.markdown("---")
     st.markdown("**Global Variables**")
     if not globals_list:
@@ -402,7 +389,6 @@ def _render_line_variables(line_id, entry):
     else:
         _render_globals_section(line_id, globals_list)
 
-    # --- LOCAL VARIABLES SECTION ---
     st.markdown("**Local Variables**")
     if not locals_list:
         st.caption("_(No local variables for this product.)_")
@@ -410,34 +396,67 @@ def _render_line_variables(line_id, entry):
         _render_locals_section(line_id, locals_list)
 
 
-# --- RENDER THE GLOBAL VARIABLES (for now: read-only default only) ---
+# --- RENDER THE GLOBAL VARIABLES (full dropdown options via variable-set-values) ---
 def _render_globals_section(line_id, globals_list):
-    # Layout in 3 columns to save vertical space
     cols = st.columns(3)
+
+    # Per-session cache of instance lists (keyed by VariableSetId)
+    if "global_instances_cache" not in st.session_state:
+        st.session_state.global_instances_cache = {}
+
     for i, g_name in enumerate(globals_list):
         col = cols[i % 3]
         with col:
             catalog_entry = _find_global_by_display_name(g_name)
             default_value = (catalog_entry or {}).get("PrimaryInstance") or "(unknown)"
+            vs_id = (catalog_entry or {}).get("Id")
 
-            # Read current override (if any) so the widget keeps its value after rerun
+            # Fetch instance list for this variable set (cached per session)
+            options = [default_value]
+            if vs_id:
+                if vs_id not in st.session_state.global_instances_cache:
+                    instances, error = fetch_variable_set_values(st.session_state.api_key, vs_id)
+                    if error or not instances:
+                        st.session_state.global_instances_cache[vs_id] = None
+                    else:
+                        # Build dropdown labels like "001 - PL 01: As Spec'd"
+                        labels = []
+                        for inst in instances:
+                            ref = inst.get("Reference") or ""
+                            name_field = inst.get("Name")
+                            if isinstance(name_field, dict):
+                                nm = name_field.get("DisplayName") or ""
+                            else:
+                                nm = name_field or ""
+                            if ref and nm:
+                                labels.append(f"{ref} - {nm}")
+                            elif nm:
+                                labels.append(nm)
+                            elif ref:
+                                labels.append(ref)
+                        st.session_state.global_instances_cache[vs_id] = labels
+
+                cached = st.session_state.global_instances_cache.get(vs_id)
+                if cached:
+                    options = cached
+
             overrides = st.session_state.cart[line_id].setdefault("globals", {})
             current = overrides.get(g_name, default_value)
 
-            # For now we only know the default, so the dropdown has just one option.
-            # Full dropdown options will come in Round 2.
-            st.selectbox(
+            # Make sure current value is in options list
+            if current not in options:
+                options = [current] + options
+
+            new_val = st.selectbox(
                 g_name,
-                options=[current],
-                index=0,
+                options=options,
+                index=options.index(current),
                 key=f"glob_{line_id}_{g_name}",
-                disabled=True,
-                help="Full dropdown options coming soon — shown value is the system default.",
             )
-            overrides[g_name] = current
+            overrides[g_name] = new_val
 
 
-# --- RENDER THE LOCAL VARIABLES (working dropdowns based on PredefinedValues) ---
+# --- RENDER THE LOCAL VARIABLES ---
 def _render_locals_section(line_id, locals_list):
     cols = st.columns(3)
     for i, l_name in enumerate(locals_list):
@@ -446,7 +465,6 @@ def _render_locals_section(line_id, locals_list):
             catalog_entry = _find_local_by_display_name(l_name)
 
             if not catalog_entry:
-                # Variable listed on the product but not in the catalog — display name only
                 st.text_input(l_name, value="(not in catalog)", key=f"loc_{line_id}_{l_name}", disabled=True)
                 continue
 
@@ -457,9 +475,7 @@ def _render_locals_section(line_id, locals_list):
             overrides = st.session_state.cart[line_id].setdefault("locals", {})
             current = overrides.get(l_name, default_value if default_value is not None else "")
 
-            # Choose widget type based on whether there are predefined values
             if predefined:
-                # Ensure the current value exists in the options list (fallback to first)
                 if current not in predefined:
                     current = default_value if default_value in predefined else predefined[0]
                 new_val = st.selectbox(
@@ -469,7 +485,6 @@ def _render_locals_section(line_id, locals_list):
                     key=f"loc_{line_id}_{l_name}",
                 )
             else:
-                # Free-entry when no predefined values
                 new_val = st.text_input(
                     l_name,
                     value=str(current) if current is not None else "",
@@ -485,6 +500,11 @@ def _render_library(products):
     st.markdown("#### 📚 Product Library")
     st.caption(f"{len(products)} active products across {len({p.get('CategoryName', '') for p in products})} categories.")
 
+    if "last_added_category" not in st.session_state:
+        st.session_state.last_added_category = None
+    if "just_added" not in st.session_state:
+        st.session_state.just_added = set()
+
     grouped = {}
     for p in products:
         cat = p.get("CategoryName") or "Uncategorized"
@@ -492,7 +512,8 @@ def _render_library(products):
 
     for cat in sorted(grouped.keys(), key=lambda s: s.lower()):
         cat_products = sorted(grouped[cat], key=lambda p: (p.get("Name") or "").lower())
-        with st.expander(f"{cat} ({len(cat_products)})", expanded=False):
+        is_open = (cat == st.session_state.last_added_category)
+        with st.expander(f"{cat} ({len(cat_products)})", expanded=is_open):
             for p in cat_products:
                 _render_library_product(p)
 
@@ -501,13 +522,16 @@ def _render_library(products):
 def _render_library_product(product):
     pid = product.get("Id")
     name = product.get("Name") or "(no name)"
-    desc = product.get("Description") or "—"
+    desc = product.get("Description") or ""
     category = product.get("CategoryName") or ""
 
-    c1, c2 = st.columns([8, 2])
+    c1, c2, c3 = st.columns([7, 2, 1.2])
     with c1:
-        st.markdown(f"**{name}**")
-        st.caption(desc)
+        desc_html = f" <span style='color:#888; font-size:0.85rem;'>{desc}</span>" if desc else ""
+        st.markdown(
+            f"<div style='padding:0.15rem 0;'><strong>{name}</strong>{desc_html}</div>",
+            unsafe_allow_html=True,
+        )
     with c2:
         if st.button("Add to Opportunity", key=f"lib_add_{pid}", type="primary"):
             line_id = f"{pid}__{st.session_state.cart_line_counter}"
@@ -519,10 +543,28 @@ def _render_library_product(product):
                 "name": name,
                 "qty": 1,
                 "category": category,
-                "globals": {},  # Populated as user interacts with the expander
-                "locals": {},   # Populated as user interacts with the expander
+                "globals": {},
+                "locals": {},
             }
-            st.toast(f"✓ Added {name} to opportunity", icon="🛒")
+            st.session_state.just_added.add(pid)
+            st.session_state.last_added_category = category
             st.rerun()
+    with c3:
+        if pid in st.session_state.just_added:
+            st.markdown(
+                """
+                <div style='color:#28a745; font-weight:600; padding-top:0.45rem;
+                            animation: fadeOut 0.5s ease-in 2.5s forwards;'>
+                    ✓ Added
+                </div>
+                <style>
+                    @keyframes fadeOut {
+                        from { opacity: 1; }
+                        to { opacity: 0; }
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
-    st.markdown("<hr style='margin:0.5rem 0; border-color:#f0f0f0;' />", unsafe_allow_html=True)
+    st.markdown("<hr style='margin:0.25rem 0; border-color:#f0f0f0;' />", unsafe_allow_html=True)

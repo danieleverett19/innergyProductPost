@@ -1,6 +1,10 @@
 # --- api_helpers.py ---
 # All Innergy API calls and related constants live here.
 # No Streamlit UI code — just pure API logic.
+#
+# API version choices:
+#   - V1 STABLE: used wherever possible (employees, company info, opportunities, products)
+#   - V2-UNSTABLE: variable-sets and variables catalogs (no V1 equivalent exists yet)
 
 import requests
 import pandas as pd
@@ -22,7 +26,7 @@ EMPLOYEE_COLUMNS = [
 ]
 
 
-# --- HELPER: FETCH COMPANY NAME ---
+# --- HELPER: FETCH COMPANY NAME (V1 stable) ---
 def fetch_company_name(api_key: str):
     url = BASE_URL + "/api/ourCompanyInfo/settings"
     headers = {"Accept": "application/json", "Api-Key": api_key}
@@ -38,7 +42,7 @@ def fetch_company_name(api_key: str):
         return None
 
 
-# --- HELPER: FETCH FACILITY ---
+# --- HELPER: FETCH FACILITY (V1 stable) ---
 def fetch_facility(api_key: str):
     url = BASE_URL + "/api/opportunities"
     headers = {"Accept": "application/json", "Api-Key": api_key}
@@ -61,7 +65,7 @@ def fetch_facility(api_key: str):
         return None, ""
 
 
-# --- HELPER: FETCH EMPLOYEES (used to validate the API key on login) ---
+# --- HELPER: FETCH EMPLOYEES (V1 stable — used to validate API key on login) ---
 def fetch_employees(api_key: str):
     url = BASE_URL + "/api/employees"
     headers = {"Accept": "application/json", "Api-Key": api_key}
@@ -90,7 +94,7 @@ def fetch_employees(api_key: str):
         return None, f"❌ Error: {str(e)}"
 
 
-# --- HELPER: CREATE OPPORTUNITY ---
+# --- HELPER: CREATE OPPORTUNITY (V1 stable) ---
 def create_opportunity(api_key: str, payload: dict):
     url = BASE_URL + "/api/opportunities/create"
     headers = {
@@ -109,7 +113,7 @@ def create_opportunity(api_key: str, payload: dict):
         return False, str(e)
 
 
-# --- HELPER: FETCH PRODUCTS ---
+# --- HELPER: FETCH PRODUCTS (V1 stable) ---
 def fetch_products(api_key: str):
     url = BASE_URL + "/api/products"
     headers = {"Accept": "application/json", "Api-Key": api_key}
@@ -117,7 +121,6 @@ def fetch_products(api_key: str):
         r = requests.get(url, headers=headers, timeout=30)
         if r.status_code == 200:
             data = r.json()
-            # The products endpoint wraps results in an "Items" array (confirmed via Power Query)
             items = []
             if isinstance(data, dict):
                 items = data.get("Items") or data.get("items") or data.get("data") or []
@@ -134,17 +137,14 @@ def fetch_products(api_key: str):
         return None, f"❌ Error: {str(e)}"
 
 
-# --- HELPER: FETCH VARIABLE SETS (master catalog of global variable groups) ---
+# --- HELPER: FETCH VARIABLE SETS (V2-unstable — master catalog of global variable groups) ---
 def fetch_variable_sets(api_key: str):
-    # NOTE: this endpoint lives on the V2-unstable API, not the original V1.
-    # V2 uses pagination — we pass take=500 to grab everything in one call.
     url = BASE_URL + "/api/v2-unstable/libraries/variable-sets?skip=0&take=500"
     headers = {"Accept": "application/json", "Api-Key": api_key}
     try:
         r = requests.get(url, headers=headers, timeout=30)
         if r.status_code == 200:
             data = r.json()
-            # V2 responses use "data" (not "Items") for the array
             items = []
             if isinstance(data, dict):
                 items = data.get("data") or data.get("Data") or []
@@ -161,9 +161,9 @@ def fetch_variable_sets(api_key: str):
         return None, f"❌ Error: {str(e)}"
 
 
-# --- HELPER: FETCH VARIABLE SET VALUES (the actual dropdown options) ---
-def fetch_variable_set_values(api_key: str):
-    url = BASE_URL + "/api/v2-unstable/libraries/variables/variable-set-values?skip=0&take=500"
+# --- HELPER: FETCH VARIABLES (V2-unstable — local variables catalog) ---
+def fetch_variables(api_key: str):
+    url = BASE_URL + "/api/v2-unstable/libraries/variables?skip=0&take=500"
     headers = {"Accept": "application/json", "Api-Key": api_key}
     try:
         r = requests.get(url, headers=headers, timeout=30)
@@ -185,12 +185,21 @@ def fetch_variable_set_values(api_key: str):
         return None, f"❌ Error: {str(e)}"
 
 
-# --- HELPER: FETCH VARIABLES (likely local variables) ---
-def fetch_variables(api_key: str):
-    url = BASE_URL + "/api/v2-unstable/libraries/variables?skip=0&take=500"
+# --- HELPER: FETCH VARIABLE SET VALUES (V2-unstable — instances inside a variable set) ---
+# Returns the dropdown options for a given global variable group.
+# e.g. for "301 Laminate" (variableSetId=e300cad4...), returns 10 rows:
+# PL 01, PL 02, PL 03, etc.
+# Key: variableSetId must be a lowercase query parameter (not a filter).
+def fetch_variable_set_values(api_key: str, variable_set_id: str):
+    url = BASE_URL + "/api/v2-unstable/libraries/variables/variable-set-values"
     headers = {"Accept": "application/json", "Api-Key": api_key}
+    params = {
+        "skip": 0,
+        "take": 500,
+        "variableSetId": variable_set_id,
+    }
     try:
-        r = requests.get(url, headers=headers, timeout=30)
+        r = requests.get(url, headers=headers, params=params, timeout=30)
         if r.status_code == 200:
             data = r.json()
             items = []
